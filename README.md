@@ -128,8 +128,8 @@ name = "Agent to Agent Communication"
 author = "some-other-author"
 
 [agent.workflow]
-setup = poetry
-entrypoint = uvicorn app.main:app --host
+setup = "poetry"
+entrypoint = "uvicorn app.main:app --host"
 port = "3000"
 
 # See note above for why this might just be using a docker image, or not.
