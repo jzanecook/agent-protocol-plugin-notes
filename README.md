@@ -251,12 +251,10 @@ async def main():
 asyncio.run(main())
 ```
 
----
+**This implementation is likely flawed**
+- Adding a route to register external agents or plugins to this agent makes more sense. The implementation of the execute_agent_task_step or the create_agent_task would need to keep in mind the initial registration of outside sources. That's *if* this concept is valid.
 
-Notes for tomorrow:
-- Spend the night sleeping
-- Use the added creativity from the morning to revise and create a proper draft of a spec
-- Elaborate on the concept of the CLI and make it more fleshed out in general
+---
 
 Also, keep in mind the following quote:
 > 1. I don’t think a protocol or a plugin should be an agent. That’s very very specific implementation. Protocols should be just definitions and the implementation can be whatever (read oauth rfc for example)
@@ -266,4 +264,89 @@ Also, keep in mind the following quote:
 > 
 > *mlejva, September 6 2023 10:26PM PST*
 
-And figure out exactly what it means and what you could cut out or re-prioritize for a future update. Or, whether you've been going in the wrong direction the whole time.
+My interpretation of this message is to focus on more specification-focused pursuits. With this in mind, the implementation of the agent-protocol library should be less my focus, and I should attempt to focus instead on creating a "standard". Like the RFC he mentioned.
+
+The issue I have with the concept of a "protocol or plugin shouldn't be an agent" is that, then, well, what *should* a plugin look like? How would it be introduced to the agent?
+
+So with that in mind, a quick overview of what the agent-protocol CLI would look like or function as in this setup just so I don't have to think about it again:
+- `$ agent-protocol init` - Set up a new Agent
+    - Flags:
+        - `--template, -t` - Specify a github based template as a base for the new agent. (e.g. minimal)
+        - A set of flags would be presented that would automate any questions asked during the normal process, along with an option to skip them entirely like `--yes, -Y`
+    - Arguments:
+        - `path` - (Default: `./`) The path of the new Agent, would automatically be the name.
+    - Process: Prompt the user with a set of questions, like the author name, project name, description, and any other necessary metadata and create the Agent.toml file at a minimum, or if using a template, pull the template using Git into the directory.
+- `$ agent-protocol info` - Display a formatted infodump of the Agent.toml file
+- `$ agent-protocol add <package>` - Verifies the package is available (can be an `author/name` or a github repo with an Agent.toml file in the root of whatever folder is specified)
+- `$ agent-protocol remove <package>` - Self explanatory
+- `$ agent-protocol start` - Starts up the current agent, and all associated plugins/agents/packages.
+
+I think this would serve as a solid base for the agent-protocol CLI tool, however there may be differing opinions on what it would or should exactly entail, that I look forward to hearing.
+
+---
+
+The agent-protocol itself, and the broad specification of an Agent Protocol, would include a modified version of the existing protocol as mentioned above.
+
+An agent consists of an API (with a variable URL/Port/SSL strategy) where it consists of several standardized routes, in reference to the openapi spec below.
+
+```
+/agent/tasks - POST, GET - Creates a task for the agent or gets all tasks previously created for the agent.
+/agent/tasks/{task_id} - GET - Gets details about a specific task.
+/agent/tasks/{task_id}/steps - GET, POST - Lists all steps for the specified task, or initiates a step for the specified task.
+/agent/tasks/{task_id}/steps/{step_id} - GET - Gets details about a specified task step.
+/agent/tasks/{task_id}/artifacts - GET, POST - Gets the list of artifacts for the specified task, or uploads an artifact to the agent for that task.
+/agent/tasks/{task_id}/artifacts/{artifact_id} - GET - Downloads a specified artifact.
+```
+
+In addition to these, an agent (that could become a plugin) would need to register tasks/steps to be used as plugins.
+
+So, perhaps:
+```
+/agent/registered - POST, GET - Registers a task as a "registered" task with steps or with artifacts. Ideally this task should be able to be called again in the future, via another agent to receive an output.
+```
+*This would imply the following:*
+```
+/agent/registered/{task_id}/
+/agent/registered/{task_id}/steps/{step_id}
+/agent/registered/{task_id}/artifacts
+/agent/registered/{task_id}/artifacts/{artifact_id}
+```
+
+**Alternatively:**
+Rather than registering tasks/steps you could register the agent itself (that may be necessary).
+
+e.g.:
+```
+/agent/registered/{agent_author}/{agent-name}/tasks
+```
+
+With this approach, the schema/metadata for tasks would be where things like middleware or tools would be implemented. So a task would be like:
+```json
+{
+    "task_id": "b225e278-8b4c-4f99-a696-8facf19f0e56",
+    "artifacts": [],
+    "plugin": { // Added if the task needs to be run in tandem with other tasks
+        "run_at": "start", // start, end
+    },
+    "tool": { // Added if the task is a tool to be used by another task
+        "name": "Upload to S3",
+        "requires": ["artifacts", "task_id", "step_id"]
+    },
+    "blocking": true, // Added if the task needs to stop other tasks/steps from executing.
+}
+```
+
+Tasks like these would need to be registered rather than triggered, so (within the agent that contains the plugin/tool) you would register the task. Or, perhaps a simple `"registered": true` flag could be added to the task information, which would be available via another agent when you GET `/agent/registered/{author}/{agent_name}/tasks`
+
+More discussion necessary.
+
+### Modifications to Task/Step/Artifact Schema
+
+Some modifications may need to be made to the specification for tasks, steps and artifacts, for instance:
+- For steps/tasks: Steps would need to include a blocking strategy for next steps, and there would need to be an implementation to make them run before other tasks/steps in a series, or after. Additionally, they would also need to be called via other steps in the event of using another agent as a plugin, or using a tool, so steps or tasks need to have some form of labelling mechanic introduced in the registration to give the name, description, and arguments that are necessary for this functional approach.
+- For artifacts: In the case of something like an auth plugin, being able to freely view the artifacts that it has or produces could become a security issue, adding the ability to make them "private" so that only the agent they're contained in may be necessary.
+
+### Additional Note about API routes for interoperability
+If you wanted to build a tool or plugin, you would only really need the routes related to that. So the protocol could be modified to have optional routes that aren't necessary in the grand scheme of things.
+
+e.g. a plugin that includes a task and step but no artifacts wouldn't necessarily need to include the artifacts in the response, or an artifacts API route.
