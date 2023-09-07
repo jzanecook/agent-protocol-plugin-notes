@@ -251,9 +251,6 @@ async def main():
 asyncio.run(main())
 ```
 
-## Hot Take
-Maybe I'm finally understanding what mlejva said (below) and thinking about this in better terms, if the protocol is the definition and not the implementation
-
 ---
 
 Notes for tomorrow:
